@@ -9,7 +9,7 @@ import numpy;
 import scipy;
 import sys;
 
-from inferencer import compute_dirichlet_expectation
+# from inferencer import compute_dirichlet_expectation
 from inferencer import Inferencer;
 
 """
@@ -41,6 +41,7 @@ class MonteCarlo(Inferencer):
         
         self._parsed_corpus, self._parsed_labels = self.parse_data(corpus);
         
+        '''
         # define the total number of document
         self._number_of_documents = len(self._parsed_corpus);
         
@@ -51,93 +52,155 @@ class MonteCarlo(Inferencer):
         self._n_k = numpy.zeros(self._number_of_topics, dtype=int)
         # define the topic assignment for every word in every document, first indexed by doc_id id, then indexed by word word_pos
         self._k_dn = {};
+        '''
         
-        self.random_initialize();
+        # self._number_of_documents, self._k_dn, self._n_dk, self._n_k, self._n_kv = self.random_initialize();
+        self._k_dn, self._n_dk, self._n_k, self._n_kv = self.random_initialize();
 
-    def random_initialize(self, parsed_corpus_response=None):
-        if parsed_corpus_response == None:
-            word_idss = self._parsed_corpus;
-            labels = self._parsed_labels
+    def random_initialize(self, parsed_corpus_labels=None):
+        if parsed_corpus_labels == None:
+            _parsed_corpus = self._parsed_corpus;
+            _parsed_labels = self._parsed_labels
         else:
-            word_idss, labels = parsed_corpus_response;
+            _parsed_corpus, _parsed_labels = parsed_corpus_labels;
 
-        # topic assignments
-        self._k_dn = {}
+        # define the total number of document
+        _number_of_documents = len(_parsed_corpus);
+        
+        # define the counts over different topics for all documents, first indexed by doc_id id, the indexed by topic id
+        _n_dk = numpy.zeros((_number_of_documents, self._number_of_topics), dtype=int)
+        _n_k = numpy.zeros(self._number_of_topics, dtype=int)
+        # define the topic assignment for every word in every document, first indexed by doc_id id, then indexed by word word_pos
+        _k_dn = {}
+        
+        # define the counts over words for all topics, first indexed by topic id, then indexed by token id
+        _n_kv = numpy.zeros((self._number_of_topics, self._number_of_types), dtype=int)
 
-        for doc_id in xrange(len(word_idss)):
-            self._k_dn[doc_id] = numpy.zeros(len(self._parsed_corpus[doc_id]));
-            for word_pos in xrange(len(word_idss[doc_id])):
-                type_index = self._parsed_corpus[doc_id][word_pos];
+        for doc_id in xrange(len(_parsed_corpus)):
+            _k_dn[doc_id] = numpy.zeros(len(_parsed_corpus[doc_id]));
+            for word_pos in xrange(len(_parsed_corpus[doc_id])):
+                type_index = _parsed_corpus[doc_id][word_pos];
                 topic_index = numpy.random.randint(self._number_of_topics);
                 
-                self._k_dn[doc_id][word_pos] = topic_index;
-                self._n_dk[doc_id, topic_index] += 1;
-                self._n_kv[topic_index, type_index] += 1;
-                self._n_k[topic_index] += 1;
-    
-    def sample_document(self, doc_id, local_parameter_iteration=1):
-        parsed_labels = self._parsed_labels[doc_id, :];
+                _k_dn[doc_id][word_pos] = topic_index;
+                _n_dk[doc_id, topic_index] += 1;
+                _n_kv[topic_index, type_index] += 1;
+                _n_k[topic_index] += 1;
         
-        for iter in xrange(local_parameter_iteration):
-            for word_pos in xrange(len(self._parsed_corpus[doc_id])):
-                assert word_pos >= 0 and word_pos < len(self._parsed_corpus[doc_id])
+        if parsed_corpus_labels == None:
+            # return _number_of_documents, _k_dn, _n_dk, _n_k, _n_kv
+            return _k_dn, _n_dk, _n_k, _n_kv
+        else:
+            # return _number_of_documents, _k_dn, _n_dk, _n_k
+            return _k_dn, _n_dk, _n_k
+    
+    def sample_documents(self, parsed_corpus_labels=None, local_parameter_iteration=10):
+        if parsed_corpus_labels == None:
+            _parsed_corpus = self._parsed_corpus;
+            _parsed_labels = self._parsed_labels;
+            
+            _k_dn = self._k_dn;
+            _n_dk = self._n_dk;
+            _n_k = self._n_k;
+            
+            _n_kv = self._n_kv;
+        else:
+            _parsed_corpus, _parsed_labels = parsed_corpus_labels;
+            
+            _k_dn , _n_dk, _n_k = self.random_initialize(parsed_corpus_labels);
+            
+            _n_kv = self._n_kv;
+        
+        for doc_id in xrange(len(_parsed_corpus)):
+            parsed_labels = _parsed_labels[doc_id, :];
+            
+            for iter in xrange(local_parameter_iteration):
+                for word_pos in xrange(len(_parsed_corpus[doc_id])):
+                    assert word_pos >= 0 and word_pos < len(_parsed_corpus[doc_id])
+                    
+                    # retrieve the word_id
+                    word_id = _parsed_corpus[doc_id][word_pos];
+                    old_topic = _k_dn[doc_id][word_pos];
+                    
+                    if parsed_corpus_labels == None:
+                        _n_kv[old_topic, word_id] -= 1;
+                    _n_k[old_topic] -= 1;
+                    _n_dk[doc_id, old_topic] -= 1;
+                    
+                    posterior_probability = parsed_labels.copy()
+                    posterior_probability *= _n_dk[doc_id, :] + self._alpha_alpha
+                    # posterior_probability /= numpy.sum(_n_dk[doc_id, :] + self._alpha_alpha)
+                    posterior_probability *= _n_kv[:, word_id] + self._alpha_beta[word_id]
+                    posterior_probability /= _n_k + numpy.sum(self._alpha_beta)
+                    
+                    # sample a new topic out of a distribution according to old_log_probability
+                    temp_probability = posterior_probability / numpy.sum(posterior_probability)
+                    temp_topic_probability = numpy.random.multinomial(1, temp_probability)[numpy.newaxis, :]
+                    # print numpy.nonzero(temp_topic_probability == 1)
+                    new_topic = numpy.nonzero(temp_topic_probability == 1)[1][0];
+    
+                    # after we draw a new topic for that word_id, we will change the topic|doc_id counts and word_id|topic counts, i.e., add the counts back
+                    if parsed_corpus_labels == None:
+                        _n_kv[new_topic, word_id] += 1;
+                    _n_dk[doc_id, new_topic] += 1;
+                    _n_k[new_topic] += 1;
+                    # assign the topic for the word_id of current document at current position
+                    _k_dn[doc_id][word_pos] = new_topic;
+                    
+            if (doc_id + 1) % 1000 == 0:
+                print "successfully sampled %d documents" % (doc_id + 1)
                 
-                # retrieve the word_id
-                word_id = self._parsed_corpus[doc_id][word_pos]
-                old_topic = self._k_dn[doc_id][word_pos]
-                
-                self._n_kv[old_topic, word_id] -= 1
-                self._n_k[old_topic] -= 1
-                self._n_dk[doc_id, old_topic] -= 1
-                
-                posterior_probability = parsed_labels.copy()
-                posterior_probability *= self._n_dk[doc_id, :] + self._alpha_alpha
-                # posterior_probability /= numpy.sum(self._n_dk[doc_id, :] + self._alpha_alpha)
-                posterior_probability *= self._n_kv[:, word_id] + self._alpha_beta[word_id]
-                posterior_probability /= self._n_k + numpy.sum(self._alpha_beta)
-                
-                # sample a new topic out of a distribution according to old_log_probability
-                temp_probability = posterior_probability / numpy.sum(posterior_probability)
-                temp_topic_probability = numpy.random.multinomial(1, temp_probability)[numpy.newaxis, :]
-                # print numpy.nonzero(temp_topic_probability == 1)
-                new_topic = numpy.nonzero(temp_topic_probability == 1)[1][0];
-
-                # after we draw a new topic for that word_id, we will change the topic|doc_id counts and word_id|topic counts, i.e., add the counts back
-                self._n_dk[doc_id, new_topic] += 1
-                self._n_kv[new_topic, word_id] += 1;
-                self._n_k[new_topic] += 1;
-                # assign the topic for the word_id of current document at current position
-                self._k_dn[doc_id][word_pos] = new_topic
-                
+        if parsed_corpus_labels == None:
+            self._k_dn = _k_dn;
+            self._n_dk = _n_dk;
+            self._n_k = _n_k;
+            
+            self._n_kv = _n_kv;
+        else:
+            return _k_dn , _n_dk, _n_k;
+        
     """
     sample the corpus to train the parameters
     @param hyper_delay: defines the delay in updating they hyper parameters, i.e., start updating hyper parameter only after hyper_delay number of gibbs sampling iterations. Usually, it specifies a burn-in period.
     """
     def learning(self):
         # sample the total corpus
-        # for iter1 in xrange(number_of_iterations):
         self._counter += 1;
         
         processing_time = time.time();
 
         # sample every document
-        for doc_id in xrange(self._number_of_documents):
-            self.sample_document(doc_id)
-
-            if (doc_id + 1) % 1000 == 0:
-                print "successfully sampled %d documents" % (doc_id + 1)
+        self.sample_documents()
 
         if self._counter % self._hyper_parameter_optimize_interval == 0:
             self.optimize_hyperparameters()
 
         processing_time = time.time() - processing_time;
         print("iteration %i finished in %d seconds with log-likelihood %g" % (self._counter, processing_time, self.log_likelihood(self._alpha_alpha, self._alpha_beta)))
+    
+    def inference(self, corpus):
+        _parsed_corpus, _parsed_labels = self.parse_data(corpus);
+        
+        processing_time = time.time();
+        
+        # sample every document
+        _k_dn, _n_dk, _n_k = self.sample_documents((_parsed_corpus, _parsed_labels), 50)
+        
+        true_labels = numpy.argmax(_parsed_labels, axis=1)
+        pred_labels = numpy.argmax(_n_dk, axis=1);
+        print 1.0 * numpy.sum(true_labels == pred_labels) / len(true_labels);
+        
+        processing_time = time.time() - processing_time;
+        print "inference finished in %g seconds" % (processing_time)
+        # print("inference finished in %g seconds with log-likelihood %g" % (processing_time, self.log_likelihood(self._alpha_alpha, self._alpha_beta)))
+        
+        return _k_dn, _n_dk;
 
     def log_likelihood(self, alpha_alpha, alpha_beta):
         """
         likelihood function
         """
-        assert self._n_dk.shape == (self._number_of_documents, self._number_of_topics);
+        # assert self._n_dk.shape == (self._number_of_documents, self._number_of_topics);
         assert alpha_alpha.shape == (self._number_of_topics,);
         assert alpha_beta.shape == (self._number_of_types,);
         
