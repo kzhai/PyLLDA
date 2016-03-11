@@ -113,7 +113,8 @@ class Inferencer():
                 label_ids = numpy.zeros((1, self._number_of_topics));
                 for label in labels:
                     if label not in self._label_to_index:
-                        sys.stderr.write("warning: label not found");
+                        #print label, self._label_to_index
+                        sys.stderr.write("warning: label not found...");
                         continue;
                     label_ids[0, self._label_to_index[label]] += 1;
                 if self._padding_default_label:

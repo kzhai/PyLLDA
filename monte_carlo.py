@@ -188,7 +188,7 @@ class MonteCarlo(Inferencer):
         
         true_labels = numpy.argmax(_parsed_labels, axis=1)
         pred_labels = numpy.argmax(_n_dk, axis=1);
-        print 1.0 * numpy.sum(true_labels == pred_labels) / len(true_labels);
+        print "classification error is", 1 - 1.0 * numpy.sum(true_labels == pred_labels) / len(true_labels);
         
         processing_time = time.time() - processing_time;
         print "inference finished in %g seconds" % (processing_time)
