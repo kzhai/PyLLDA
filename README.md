@@ -30,7 +30,7 @@ To launch PyLLDA, first redirect to the directory of PyLLDA source code,
 and run the following command on example dataset,
 
 	python -m launch_train --input_directory=./review.4class.stem/ --output_directory=./ --training_iterations=50
-	
+
 The generic argument to run PyLLDA is
 
 	python -m launch_train --input_directory=$INPUT_DIRECTORY/$CORPUS_NAME --output_directory=$OUTPUT_DIRECTORY --training_iterations=$NUMBER_OF_ITERATIONS
